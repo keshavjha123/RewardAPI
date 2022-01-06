@@ -1,9 +1,18 @@
 const mongoose=require('mongoose');
 
 const userSchema=new mongoose.Schema({
-    uuid:String,
-    Coins:String,
-    Crypto:String,
-})
+    
+    userlist : [ 
+        {
+            uuid : String,
+            DefaultReward : String,
+            CryptoPrimaryAccountNumber : String,
+            CryptoSecondaryAccountNumber :String,
+            CryptoPrimaryPrivateKey:String,
+            CryptoSecondaryPrivateKey:String,
+        }
+    ]
+}
+)
 
 module.exports=mongoose.model('Users',userSchema);

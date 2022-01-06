@@ -2,7 +2,8 @@ const mongoose=require('mongoose');
 
 const redeemSchema=new mongoose.Schema({
     uuid:String,
-    Redeem:String
+    RedeemCrypto:String,
+    RedeemIndus:String,
 })
 
 module.exports=mongoose.model('Redeem',redeemSchema);

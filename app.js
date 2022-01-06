@@ -76,17 +76,6 @@ mongoose.connection.on('error',(err)=>{
 })
 
 
-
-
-
-
-
-
-
-
-
-
-
 app.get('/ActionLogging',async(req,res)=>{
     // Requestbody
 	//      {
@@ -106,14 +95,42 @@ app.get('/ActionLogging',async(req,res)=>{
       
       try {
         const response=await axios(config);
-        console.log(req.headers.actioncode);
-        await Logging.insertMany({
-            uuid:response.data.uuid,
-            ActionCode:req.headers.actioncode,
-        })
-        let reward=await Rules.find({ActionCode:req.headers.actioncode})
+        // console.log(response);
+        // console.log(req.headers.actioncode);
+        
+        let reward=await Rules.findOne({ActionCode:req.headers.actioncode});
+        // console.log(reward);
+
+        // use the first line
+        // let desc="point";
+        let desc=response.data.userObj.defaultRewards;
+        let IC=0;
+        let IP=0
+        if(desc==="coin"){
+            IC=reward.IndusCoin;
+            await Logging.insertMany({
+                uuid:response.data.uuid,
+                ActionCode:req.headers.actioncode,
+                IndusCoin:reward.IndusCoin,
+                IndusPoint:0
+            })
+        }else{
+            IP=reward.IndusPoint
+            await Logging.insertMany({
+                uuid:response.data.uuid,
+                ActionCode:req.headers.actioncode,
+                IndusPoint:reward.IndusPoint,
+                IndusCoin:0
+            })
+            
+        }
         res.send({responseData:response.data,
-                reward:reward});
+            reward:{
+                    Id:response.data.uuid,
+                    ActionCode:req.headers.ActionCode,
+                    IndusPoint:IP,
+                    IndusCoin:IC}
+                });
       } catch (error) {
           console.log('error',error);
       }
@@ -121,14 +138,6 @@ app.get('/ActionLogging',async(req,res)=>{
 
     })
     
-    // const response=await fetch(`${url}`,{
-    //     headers:{
-    //         privatekey:req.headers.privatekey
-    //     }
-    // })
-    // .then((response=>response.json()))
-    // .catch((console.log('There was some error while fetching the request')));
-   
 async function getRewards(publickey){
     var config = {
         method: 'get',
@@ -143,23 +152,20 @@ async function getRewards(publickey){
         const consumers=await Logging.find({
             uuid:response.data.uuid,
         })
-        const rules=await Rules.find();
-        console.log(rules);
+        
+        
         console.log(consumers);
-        let tot=0;
-        for (let index = 0; index < rules.length; index++) {
-            const element = rules[index];
-            let c=0;
-            for (let index2= 0; index2 < consumers.length; index2++) {
-                const element2 = consumers[index2];
-                if(element.ActionCode===element2.ActionCode){
-                    c++;
-                }
-            }
-            tot=tot+c*(+element.IndusCoin);
+        let totPoints=0;
+        let totCoins=0
+
+        
+        for (let index2= 0; index2 < consumers.length; index2++) {
+            const element2 = consumers[index2];
+            totPoints=totPoints+(+element2.IndusPoint);
+            totCoins=totCoins+(+element2.IndusCoin);
         }
-        // console.log('from function',tot);
-        return tot
+         console.log(totPoints);   
+        return {totCoins:[totPoints,totCoins]}
       } catch (error) {
         //   console.log('error',error);
         return (error);
@@ -178,19 +184,24 @@ async function getRedeems(publickey){
       };
       try {
         const response=await axios(config);
-        // console.log(req.headers.actioncode);
+        // let desc="coin";
+        let desc=response.data.userObj.defaultRewards;
         const consumerRedeem=await Redeem.find({
             uuid:response.data.uuid,
         })
-        // console.log('from function',tot);
-        let totRedeem=0;
+
+        let totRedeemPoints=0;
+        let totRedeemCrypto=0;
         for (let index = 0; index < consumerRedeem.length; index++) {
             const element = consumerRedeem[index];
             let c=0;
             
-            totRedeem=totRedeem+(+element.Redeem);
+            totRedeemPoints=totRedeemPoints+(+element.RedeemIndus);
+            totRedeemCrypto=totRedeemCrypto+(+element.RedeemCrypto);
         }
-        return totRedeem;
+        console.log(totRedeemPoints);
+        return {totRedeem:[totRedeemPoints,totRedeemCrypto],
+                defaultRewards:desc};
       } catch (error) {
         //   console.log('error',error);
         return (error);
@@ -198,30 +209,27 @@ async function getRedeems(publickey){
 }
 
 
-
-
-
+app.get('/defaultReward',async(req,res)=>{
+    let uuid=await getUUID(req.headers.publickey);
+    let defaultRewards=req.headers.rewardmethod;
+    console.log(defaultRewards,uuid);
+    let user=await Users.find();
+    let index=(user[0]).userlist.findIndex((o)=>o.uuid===uuid);
+    console.log(index);
+    user[0].userlist[index].DefaultReward=defaultRewards;
+    console.log(user[0].userlist);
+    await Users.updateOne({_id:user[0]['_id']},{$set:{"userlist":user[0].userlist}});
+    res.send(uuid);
+})
 
 app.get('/getRewards',async(req,res)=>{
     let totCoins=await getRewards(req.headers.publickey);
     let totRedeem=await getRedeems(req.headers.publickey);
-    // let uuid=await getUUID(req.headers.publickey);
-    // let user=await Users.findByIdAndUpdate({
-    //     uuid:uuid,
-    // })
-    // if(user){
-    //     await user.update({
-    //         Coins:totCoins-totRedeem,
-    //     })
-    // }else{
-    //     await user.insertMany({
-    //         uuid:uuid,
-    //         Coins:totCoins-totRedeem,
-    //     })
-    // }
+    
     res.send({
-            IndusCoin:totCoins-totRedeem,
-            Crypto:0,
+            IndusCoin:totCoins.totCoins[0]-totRedeem.totRedeem[0],
+            Crypto:totCoins.totCoins[1]-totRedeem.totRedeem[1],
+            defaultRewards:totRedeem.defaultRewards,
             });
 })
 
@@ -231,12 +239,14 @@ app.get('/getpaidcoupon',(req,res)=>{
     res.send({
         zomato:{
             text:"Zomato",
+            pointrequired:5,
             coinrequired:100,
             couponcode:"Z3edM",
             link:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Zomato_logo.png/800px-Zomato_logo.png'
         },
         swiggy:{
             text:"Swiggy",
+            pointrequired:5,
             coinrequired:100,
             couponcode:"Z3edMY",
             link:'https://cdn-images-1.medium.com/max/1200/1*v5SYqjYEdQMPIwNduRrnCw.png'
@@ -261,6 +271,7 @@ app.get('/getDayWiseRewards',async(req,res)=>{
         const consumers=await Logging.find({
             uuid:response.data.uuid,
         })
+        console.log(consumers);
         const rules=await Rules.find();
          let consumersDateDiff=consumers.map((c)=>{
             let time=String((c._id).getTimestamp()).substring(0,15).split(" ");
@@ -281,25 +292,30 @@ app.get('/getDayWiseRewards',async(req,res)=>{
                     currentDate:currentDate,
                     Difference_In_Days:Difference_In_Days,
                     ActionCode:c.ActionCode,
-                    reward:reward[0].IndusCoin,
+                    rewardPoint:c.IndusPoint,
+                    rewardCrypto:c.IndusCoin
                 }
          });
          let currentTime=String(Date()).substring(0,15).split(" ");
          let daysToTake=week_map[currentTime[0]];
          console.log(daysToTake);
          let lastSevenDaysActions=consumersDateDiff.filter((el)=>{
-             return el.Difference_In_Days>=0 & el.Difference_In_Days<=daysToTake
+             return el.Difference_In_Days>=0 & el.Difference_In_Days<=6
          })
+         console.log(lastSevenDaysActions);
          let finalArrayObject={};
          for (let index = 0; index < lastSevenDaysActions.length; index++) {
              const element = lastSevenDaysActions[index];
              if(finalArrayObject[element.Difference_In_Days]){
-                 finalArrayObject[element.Difference_In_Days].coinsInDay+=(+element.reward)
+                 finalArrayObject[element.Difference_In_Days].PointsInDay+=(+element.rewardPoint);
+                 finalArrayObject[element.Difference_In_Days].CoinsInDay+=(+element.rewardCrypto);
+
              }else{
                 finalArrayObject[element.Difference_In_Days]={
                     day:element.day,
                     date:element.date,
-                    coinsInDay:+element.reward,
+                    PointsInDay:+element.rewardPoint,
+                    CoinsInDay:+element.rewardCrypto,
                     currentDate:element.currentDate
                 }
              }
@@ -351,11 +367,23 @@ app.get('/redeemCoins',async(req,res)=>{
       
       try {
         const response=await axios(config);
-        console.log(req.headers.actioncode);
-        await Redeem.insertMany({
-            uuid:response.data.uuid,
-            Redeem:req.headers.coins,
-        })
+        // console.log(req.headers.actioncode);
+        let desc=response.data.userObj.defaultRewards;
+        // let desc="point";
+        if(desc==="coin"){
+            await Redeem.insertMany({
+                uuid:response.data.uuid,
+                RedeemCrypto:req.headers.coins,
+                RedeemIndus:0,
+            })
+        }else{
+            await Redeem.insertMany({
+                uuid:response.data.uuid,
+                RedeemIndus:req.headers.coins,
+                RedeemCrypto:0,
+            })
+            
+        }
         res.send(response.data);
       } catch (error) {
           console.log('error',error);
