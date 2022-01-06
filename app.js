@@ -14,6 +14,8 @@ var axios = require('axios');
 
 const Logging=require('./logging.mongo');
 const Rules=require('./RulesSet.mongo');
+const Redeem=require('./Redeem.mongo');
+const Users=require('./users.mongo');
 
 const app=express();
 const port=process.env.PORT||3000 ;
@@ -51,7 +53,16 @@ var month_map={
     'Nov':'11',
     'Dec':'12',
 }
-
+var week_map={
+    'Mon':0,
+    'Tue':1,
+    'Wed':2,
+    'Thu':3,
+    'Fri':4,
+    'Sat':5,
+    'Sun':6,
+    
+}
 
 const MONGO_URL='mongodb+srv://API_Indus:hMJkjgn20CNq0KSC@cluster0.botjc.mongodb.net/IndusAPI?retryWrites=true&w=majority'
 
@@ -105,9 +116,7 @@ app.get('/ActionLogging',async(req,res)=>{
           console.log('error',error);
       }
 
-      
 
-    
     })
     
     // const response=await fetch(`${url}`,{
@@ -126,7 +135,6 @@ async function getRewards(publickey){
           'privatekey': publickey
         }
       };
-      
       try {
         const response=await axios(config);
         // console.log(req.headers.actioncode);
@@ -154,60 +162,85 @@ async function getRewards(publickey){
         //   console.log('error',error);
         return (error);
       }
-
-      
-
 }
 
 
-app.get('/getRewards',async(req,res)=>{
 
-    let tot=await getRewards(req.headers.publickey);
+async function getRedeems(publickey){
+    var config = {
+        method: 'get',
+        url: 'https://code-brigade-flask.appbazaar.com/verifykey',
+        headers: { 
+          'privatekey': publickey
+        }
+      };
+      try {
+        const response=await axios(config);
+        // console.log(req.headers.actioncode);
+        const consumerRedeem=await Redeem.find({
+            uuid:response.data.uuid,
+        })
+        // console.log('from function',tot);
+        let totRedeem=0;
+        for (let index = 0; index < consumerRedeem.length; index++) {
+            const element = consumerRedeem[index];
+            let c=0;
+            
+            totRedeem=totRedeem+(+element.Redeem);
+        }
+        return totRedeem;
+      } catch (error) {
+        //   console.log('error',error);
+        return (error);
+      }
+}
+
+
+
+
+
+
+app.get('/getRewards',async(req,res)=>{
+    let totCoins=await getRewards(req.headers.publickey);
+    let totRedeem=await getRedeems(req.headers.publickey);
+    // let uuid=await getUUID(req.headers.publickey);
+    // let user=await Users.findByIdAndUpdate({
+    //     uuid:uuid,
+    // })
+    // if(user){
+    //     await user.update({
+    //         Coins:totCoins-totRedeem,
+    //     })
+    // }else{
+    //     await user.insertMany({
+    //         uuid:uuid,
+    //         Coins:totCoins-totRedeem,
+    //     })
+    // }
     res.send({
-            IndusCoin:tot,
+            IndusCoin:totCoins-totRedeem,
             Crypto:0,
             });
-
-    // var config = {
-    //     method: 'get',
-    //     url: 'https://code-brigade-flask.appbazaar.com/verifykey',
-    //     headers: { 
-    //       'privatekey': req.headers.publickey
-    //     }
-    //   };
-      
-    //   try {
-    //     const response=await axios(config);
-    //     // console.log(req.headers.actioncode);
-    //     const consumers=await Logging.find({
-    //         uuid:response.data.uuid,
-    //     })
-    //     const rules=await Rules.find();
-    //     console.log(rules);
-    //     console.log(consumers);
-    //     let tot=0;
-    //     for (let index = 0; index < rules.length; index++) {
-    //         const element = rules[index];
-    //         let c=0;
-    //         for (let index2= 0; index2 < consumers.length; index2++) {
-    //             const element2 = consumers[index2];
-    //             if(element.ActionCode===element2.ActionCode){
-    //                 c++;
-    //             }
-    //         }
-    //         tot=tot+c*(+element.IndusCoin);
-    //     }
-    //     console.log(tot);
-    //     res.send({
-    //         IndusCoin:tot,
-    //         Crypto:0,
-    //     });
-    //   } catch (error) {
-    //       console.log('error',error);
-    //   }
 })
 
 
+
+app.get('/getpaidcoupon',(req,res)=>{
+    res.send({
+        zomato:{
+            text:"Zomato",
+            coinrequired:100,
+            couponcode:"Z3edM",
+            link:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Zomato_logo.png/800px-Zomato_logo.png'
+        },
+        swiggy:{
+            text:"Swiggy",
+            coinrequired:100,
+            couponcode:"Z3edMY",
+            link:'https://cdn-images-1.medium.com/max/1200/1*v5SYqjYEdQMPIwNduRrnCw.png'
+        }
+    })
+})
 
 
 app.get('/getDayWiseRewards',async(req,res)=>{
@@ -232,6 +265,7 @@ app.get('/getDayWiseRewards',async(req,res)=>{
             let date=month_map[time[1]]+'/'+time[2]+'/'+time[3];
             let currentTime=String(Date()).substring(0,15).split(" ");
             let currentDate=month_map[currentTime[1]]+'/'+currentTime[2]+'/'+currentTime[3];
+            
             let date1 = new Date(date);
             let date2 = new Date(currentDate);
             let Difference_In_Time = date2.getTime() - date1.getTime();
@@ -248,9 +282,11 @@ app.get('/getDayWiseRewards',async(req,res)=>{
                     reward:reward[0].IndusCoin,
                 }
          });
-
+         let currentTime=String(Date()).substring(0,15).split(" ");
+         let daysToTake=week_map[currentTime[0]];
+         console.log(daysToTake);
          let lastSevenDaysActions=consumersDateDiff.filter((el)=>{
-             return el.Difference_In_Days>=0 & el.Difference_In_Days<=6
+             return el.Difference_In_Days>=0 & el.Difference_In_Days<=daysToTake
          })
          let finalArrayObject={};
          for (let index = 0; index < lastSevenDaysActions.length; index++) {
@@ -284,11 +320,51 @@ app.get('/getConversionRate',(req,res)=>{
 })
 
 
+async function getUUID(publickey){
+    var config = {
+        method: 'get',
+        url: 'https://code-brigade-flask.appbazaar.com/verifykey',
+        headers: { 
+          'privatekey': publickey
+        }
+      };
+      
+      try {
+        const response=await axios(config);
+        return response.data.uuid;
+      } catch (error) {
+        return (error);
+      }
+}
 
+app.get('/redeemCoins',async(req,res)=>{
+    
+    var config = {
+        method: 'get',
+        url: 'https://code-brigade-flask.appbazaar.com/verifykey',
+        headers: { 
+          'privatekey': req.headers.publickey
+        }
+      };
+      
+      try {
+        const response=await axios(config);
+        console.log(req.headers.actioncode);
+        await Redeem.insertMany({
+            uuid:response.data.uuid,
+            Redeem:req.headers.coins,
+        })
+        res.send(response.data);
+      } catch (error) {
+          console.log('error',error);
+      }
+
+})
 
 
 app.get('/redeemCoin',async(req,res)=>{
     let tot=await getRewards(req.headers.publickey);
+    console.log(tot);
     if(tot>=100 && tot<500){
         res.send({success:true,cash:tot*conversionRate.beginner.rate});
     }
