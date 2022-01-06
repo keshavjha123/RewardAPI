@@ -111,7 +111,9 @@ app.get('/ActionLogging',async(req,res)=>{
             uuid:response.data.uuid,
             ActionCode:req.headers.actioncode,
         })
-        res.send(response.data);
+        let reward=await Rules.find({ActionCode:req.headers.actioncode})
+        res.send({responseData:response.data,
+                reward:reward});
       } catch (error) {
           console.log('error',error);
       }
